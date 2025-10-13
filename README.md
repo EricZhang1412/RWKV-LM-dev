@@ -1,6 +1,7 @@
 # Datasets Preparation
 ## Convert hf-datasets parquet files to jsonl file
 
+Routine A
 ``` bash
 pip install datasets
 cd prepare_dataset
@@ -34,6 +35,21 @@ Address: Philadelphia, PA, USA. .
 
 --my_exit_tokens 211986694 --magic_prime 51749 --ctx_len 4096
 ```
+
+Routine B
+``` bash
+pip install datasets pyarrow
+cd prepare_dataset
+python make_data_streaming_noshuffle.py "/data/malulab/datasets/fineweb-edu/data/**/*.parquet" 1 4096 --out_name fineweb-edu
+```
+
+## Start training
+
+``` bash
+cd RWKV-v7/train_temp/
+```
+
+Follow the wiki rwkv: https://wiki.rwkv.com/advance/pretrain.html#adjust-training-parameters
 
 # RWKV: Parallelizable RNN with Transformer-level LLM Performance (pronounced as "RwaKuv" (rʌkuv in IPA), from 4 major params: R W K V)
 

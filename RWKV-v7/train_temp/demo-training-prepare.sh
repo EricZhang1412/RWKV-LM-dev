@@ -14,10 +14,10 @@
 #
 MODEL_TYPE="x070" # x070 => rwkv-7.0
 #
-N_LAYER="12"
-N_EMBD="768"
+N_LAYER="24"
+N_EMBD="2048"
 #
-CTX_LEN="512" # !!! change magic_prime if you change ctx_len !!!
+CTX_LEN="4096" # !!! change magic_prime if you change ctx_len !!!
 PROJ_DIR="out/L"$N_LAYER"-D"$N_EMBD"-"$MODEL_TYPE # set output folder
 #
 #######################################################################################################################
@@ -26,9 +26,21 @@ PROJ_DIR="out/L"$N_LAYER"-D"$N_EMBD"-"$MODEL_TYPE # set output folder
 # use https://www.dcode.fr/prime-numbers-search
 #
 python train.py --wandb "" --proj_dir $PROJ_DIR \
- --data_file "data/minipile" --data_type "binidx" --vocab_size 65536 --my_testing $MODEL_TYPE \
- --ctx_len $CTX_LEN --train_stage 1 --epoch_count 1 --epoch_begin 0 \
- --epoch_save 1 --weight_decay 0 --head_size 64 \
- --num_nodes 1 --micro_bsz 1 --n_layer $N_LAYER --n_embd $N_EMBD --my_exit_tokens 1498226207 --magic_prime 2926181 \
+ --data_file "/data/malulab/datasets/fineweb-edu/binidx-200k/fineweb-edu.sample-200k" \
+ --data_type "binidx" \
+ --vocab_size 65536 \
+ --my_testing $MODEL_TYPE \
+ --ctx_len $CTX_LEN \
+ --train_stage 1 \
+ --epoch_count 1 \
+ --epoch_begin 0 \
+ --epoch_save 1 \
+ --weight_decay 0 \
+ --head_size 64 \
+ --num_nodes 1 \
+ --micro_bsz 1 \
+ --n_layer $N_LAYER \
+ --n_embd $N_EMBD \
+ --my_exit_tokens 211986694 --magic_prime 51749 \
  --lr_init 1e-5 --lr_final 1e-5 --warmup_steps 10 --beta1 0.9 --beta2 0.99 --adam_eps 1e-8 \
  --accelerator cpu --devices 1 --precision bf16 --strategy deepspeed_stage_2 --grad_cp 1
