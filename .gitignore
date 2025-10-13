@@ -4,6 +4,9 @@
 *.xlsb
 *.xlsx
 *.xls
+*.jsonl
+*.bin
+*.idx
 wandb/
 data/
 vocab.json
