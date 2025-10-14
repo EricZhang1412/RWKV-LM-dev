@@ -25,8 +25,10 @@ PROJ_DIR="out/L"$N_LAYER"-D"$N_EMBD"-"$MODEL_TYPE # set output folder
 # magic_prime = the largest 3n+2 prime smaller than datalen/ctxlen-1 (= 1498226207/512-1 = 2926222.06 in this case) = 2926181 in this case
 # use https://www.dcode.fr/prime-numbers-search
 #
+MY_EXIT_TOKENS=2120280475
+MAGIC_PRIME=517637
 python train.py --wandb "" --proj_dir $PROJ_DIR \
- --data_file "/data/malulab/datasets/fineweb-edu/binidx-200k/fineweb-edu.sample-200k" \
+ --data_file "/root/fineweb-edu-binidx/fineweb-edu.part000" \
  --data_type "binidx" \
  --vocab_size 65536 \
  --my_testing $MODEL_TYPE \
@@ -41,6 +43,6 @@ python train.py --wandb "" --proj_dir $PROJ_DIR \
  --micro_bsz 1 \
  --n_layer $N_LAYER \
  --n_embd $N_EMBD \
- --my_exit_tokens 211986694 --magic_prime 51749 \
+ --my_exit_tokens $MY_EXIT_TOKENS --magic_prime $MAGIC_PRIME \
  --lr_init 1e-5 --lr_final 1e-5 --warmup_steps 10 --beta1 0.9 --beta2 0.99 --adam_eps 1e-8 \
  --accelerator cpu --devices 1 --precision bf16 --strategy deepspeed_stage_2 --grad_cp 1

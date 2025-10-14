@@ -51,10 +51,13 @@ GPU_PER_NODE=2 # number of GPUs per node
 #
 DS_BUCKET_MB=200 # set to 2 for consumer GPUs, set to 200 for A100 / H100 (affects speed & vram usage)
 #
+MY_EXIT_TOKENS=2120280475
+MAGIC_PRIME=517637
+
 python train.py --load_model "0" --wandb "Test" --proj_dir $PROJ_DIR --my_testing $MODEL_TYPE \
  --ctx_len $CTX_LEN --train_stage 3 --epoch_count 999999 --epoch_begin 0 \
  --data_file "/data/malulab/datasets/fineweb-edu/binidx-200k/fineweb-edu.sample-200k" \
- --my_exit_tokens 211986694 --magic_prime 51749 \
+ --my_exit_tokens $MY_EXIT_TOKENS --magic_prime $MAGIC_PRIME \
  --num_nodes $N_NODE --micro_bsz $M_BSZ --n_layer $N_LAYER --n_embd $N_EMBD \
  --lr_init $LR_INIT --lr_final $LR_FINAL --warmup_steps 10 --beta1 0.9 --beta2 0.99 --adam_eps 1e-18 \
  --data_type "binidx" --vocab_size 65536 \
