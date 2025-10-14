@@ -1,9 +1,9 @@
 # make_data_streaming_noshuffle.py
 # Usage:
-#   python make_data_streaming_noshuffle.py "/data/fineweb-edu/**/*.parquet" 1 4096 --out_name fineweb-edu
+#   python make_data_streaming_noshuffle.py "/data/fineweb-edu/**/*.parquet" 1 4096 --out_name fineweb-edu --output_dir /path/to/output
 # Notes:
 #   - 保持原始顺序：不进行 shuffle / 近似随机
-#   - N_EPOCH=1 即只过一遍数据；>1 时将按相同顺序重复 N_EPOCH 次
+#   - N_EPOCH=1 即只过一遍数据；>1 会按相同顺序重复数据
 #   - 可加 --skip_decode_check 跳过 encode/decode 一致性校验（遇到极端字符时更稳）
 
 import os, sys, json, glob, argparse
@@ -108,6 +108,7 @@ def main():
     parser.add_argument("N_EPOCH", type=int, help="建议设为 1 以保持原样；>1 会按相同顺序重复数据")
     parser.add_argument("CTX_LEN", type=int, help="上下文长度，用于计算 magic_prime")
     parser.add_argument("--out_name", type=str, default=None, help="输出前缀名（默认从目录名推断）")
+    parser.add_argument("--output_dir", type=str, default=None, help="指定保存文件的目录")
     parser.add_argument("--skip_decode_check", action="store_true", help="跳过 encode/decode 一致性校验")
     parser.add_argument("--max_rows", type=int, default=None, help="仅处理前 N 行（调试用）")
     args = parser.parse_args()
@@ -124,6 +125,12 @@ def main():
         sys.exit(1)
 
     OUT_NAME = decide_out_name(IN_PATH, args.out_name, files)
+
+    # 如果指定了 output_dir，就用指定目录；否则用当前工作目录
+    if args.output_dir:
+        os.makedirs(args.output_dir, exist_ok=True)
+        OUT_NAME = os.path.join(args.output_dir, OUT_NAME)
+
     print(f"### Convert (no-shuffle) {IN_PATH} -> {OUT_NAME}.bin/idx")
     print(f"### Found {len(files)} parquet files (ordered).")
     if N_EPOCH != 1:
