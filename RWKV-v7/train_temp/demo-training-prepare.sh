@@ -28,7 +28,7 @@ PROJ_DIR="out/L"$N_LAYER"-D"$N_EMBD"-"$MODEL_TYPE # set output folder
 MY_EXIT_TOKENS=2120280475
 MAGIC_PRIME=517637
 python train.py --wandb "" --proj_dir $PROJ_DIR \
- --data_file "/root/fineweb-edu-binidx/fineweb-edu.part000" \
+ --data_file "/data/malulab/datasets/fineweb-edu/binidx-samples/fineweb-edu.part000" \
  --data_type "binidx" \
  --vocab_size 65536 \
  --my_testing $MODEL_TYPE \

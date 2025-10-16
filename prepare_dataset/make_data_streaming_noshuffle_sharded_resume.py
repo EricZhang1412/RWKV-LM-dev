@@ -13,11 +13,69 @@
 #   --out_name fineweb-edu --output_dir /out --rows_per_shard 2000000 \
 #   --resume --checkpoint /out/fwe.resume.json
 
+# python make_data_streaming_noshuffle_sharded_resume.py \
+#   "/data/malulab/datasets/fineweb-edu/**/*.parquet" \
+#   1 4096 \
+#   --out_name fineweb-edu \
+#   --output_dir /data/malulab/datasets/fineweb-edu/binidx-samples \
+#   --rows_per_shard 2000000 \
+#   --resume
+
+
 
 import os, sys, glob, json, argparse, signal
 import numpy as np
 from typing import List, Tuple, Optional
 from datasets import load_dataset
+import re
+
+import bisect
+try:
+    import pyarrow.parquet as pq
+except Exception as _e:
+    pq = None
+    print("### WARN: pyarrow 未安装，将回退到慢速定位（会非常慢）。建议 pip install pyarrow")
+
+# 新增：快速统计每个 parquet 的行数
+def _parquet_num_rows(path: str) -> int:
+    if pq is None:
+        # 极端回退：用流式迭代（很慢）
+        from datasets import load_dataset
+        n = 0
+        for _ in load_dataset("parquet", data_files=[path], split="train", streaming=True):
+            n += 1
+        return n
+    return pq.ParquetFile(path).metadata.num_rows
+
+def build_cumulative_rows(files: List[str]) -> Tuple[List[int], int]:
+    """
+    返回 (prefix_sums, total_rows)
+    prefix_sums[i] = files[0..i-1] 的累计行数（前缀和，长度 = len(files)+1）
+    """
+    prefix = [0]
+    for f in files:
+        prefix.append(prefix[-1] + _parquet_num_rows(f))
+    return prefix, prefix[-1]
+
+def seek_stream_to_global_offset(files: List[str], global_skip: int) -> Tuple[int, int, Optional[object]]:
+    """
+    用 parquet footer 快速定位 (file_idx, row_offset_in_file, iterator)
+    - 如果 global_skip == total_rows：说明一切都处理完了，返回 (len(files), 0, None)
+    """
+    prefix, total = build_cumulative_rows(files)
+    if global_skip >= total:
+        return len(files), 0, None
+    # 在前缀和里找第一个 > global_skip 的位置
+    # prefix: [0, n0, n0+n1, ...]
+    fi = bisect.bisect_right(prefix, global_skip) - 1
+    row_offset = global_skip - prefix[fi]
+
+    # 构造迭代器并丢掉 row_offset 行
+    stream = load_dataset("parquet", data_files=[files[fi]], split="train", streaming=True)
+    it = iter(stream)
+    for _ in range(row_offset):
+        next(it, None)
+    return fi, row_offset, it
 
 # ---------- Tokenizer & binidx ----------
 from tokenizer.rwkv_tokenizer import TRIE_TOKENIZER
@@ -26,6 +84,69 @@ tokenizer = TRIE_TOKENIZER("tokenizer/rwkv_vocab_v20230424.txt")
 from src.binidx import MMapIndexedDataset
 def index_file_path(prefix_path): return prefix_path + ".idx"
 def data_file_path(prefix_path):  return prefix_path + ".bin"
+
+# === 新增工具函数：扫描既有分卷，统计总样本，给出下一分卷号 ===
+def scan_existing_shards(base_prefix: str) -> Tuple[int, int]:
+    """
+    返回 (next_part_idx, total_docs_upto_prev_parts)
+    如果没有任何完成分卷，返回 (0, 0)
+    """
+    out_dir = os.path.dirname(base_prefix)
+    out_name = os.path.basename(base_prefix)
+    # 形如 fineweb-edu.partNNN.idx
+    idx_pat = re.compile(rf"^{re.escape(out_name)}\.part(\d+)\.idx$")
+    part_numbers = []
+    for fn in os.listdir(out_dir):
+        m = idx_pat.match(fn)
+        if m:
+            part_numbers.append(int(m.group(1)))
+    if not part_numbers:
+        return 0, 0
+
+    part_numbers.sort()
+    total_docs = 0
+    for p in part_numbers:
+        prefix = f"{base_prefix}.part{p:03d}"
+        try:
+            data = MMapIndexedDataset(prefix)
+            total_docs += len(data)   # 每个分卷的 item 数
+        except Exception as e:
+            print(f"### WARN: failed to open {prefix}.idx/bin: {e}. Skipping this shard.")
+            continue
+
+    next_part_idx = part_numbers[-1] + 1
+    return next_part_idx, total_docs
+
+# === 新增工具函数：在输入数据流上跳过 N 条（全局）===
+def seek_stream_to_global_offset(files: List[str], global_skip: int) -> Tuple[int, int, Optional[object]]:
+    """
+    在 files 顺序上跳过 global_skip 条记录，返回 (file_idx, row_offset_in_file, iterator)
+    - 如果 global_skip 为 0：返回 (0, 0, None) 表示从头开始
+    - iterator 若不为 None，表示已就位在目标文件上、从 offset 开始的可迭代器
+    """
+    if global_skip <= 0:
+        return 0, 0, None
+
+    remaining = global_skip
+    for fi, filepath in enumerate(files):
+        # 先做一次快速流式计数
+        stream = load_dataset("parquet", data_files=[filepath], split="train", streaming=True)
+        consumed = 0
+        for _ in stream:
+            consumed += 1
+            if consumed >= remaining:
+                # 命中在这个文件里
+                # 重新创建 iterator，并丢弃 offset 行
+                stream2 = load_dataset("parquet", data_files=[filepath], split="train", streaming=True)
+                it = iter(stream2)
+                for _ in range(remaining):
+                    next(it, None)
+                return fi, remaining, it
+        # 还不够，跨到下一文件
+        remaining -= consumed
+
+    # 如果执行到这里，说明 global_skip 超过了总行数（输入已被完全处理过）
+    return len(files), 0, None
 
 # ---------- Resumable builder (append) ----------
 class ResumableBuilder:
@@ -236,19 +357,40 @@ def main():
     # 恢复
     if args.resume and os.path.exists(ckpt_path):
         loaded = load_ckpt(ckpt_path)
-        # 参数一致性校验（关键参数需一致）
         keys_to_check = ["in_path","n_epoch","ctx_len","rows_per_shard","out_dir","out_name","skip_decode_check"]
         for k in keys_to_check:
             if loaded.get(k) != state.get(k):
                 print(f"Checkpoint mismatch on '{k}': {loaded.get(k)} != {state.get(k)}"); sys.exit(1)
-        # 文件列表一致性（长度+前后若干样本路径简检）
         lf, cf = loaded["files"], state["files"]
         if len(lf)!=len(cf) or (lf and cf and (lf[0]!=cf[0] or lf[-1]!=cf[-1])):
             print("Checkpoint files differ from current files list."); sys.exit(1)
         state = loaded
         print(f"### Resuming from checkpoint: {ckpt_path}")
     elif args.resume:
-        print(f"### --resume provided but checkpoint not found: {ckpt_path}. Starting fresh.")
+        print(f"### --resume provided but checkpoint not found: {ckpt_path}. Trying to infer from existing shards...")
+        base_prefix = os.path.join(out_dir, base_out)
+        next_part, done_docs = scan_existing_shards(base_prefix)
+        print(f"### Found completed shards up to part{next_part-1:03d} (total_docs={done_docs}).")
+
+        fi, offset, it = seek_stream_to_global_offset(files, done_docs)
+
+        # 所有输入都被处理完了：直接退出（不新开空分卷）
+        if fi >= len(files):
+            print("### All input rows have already been converted. Nothing left to do. Exiting cleanly.")
+            return
+
+        state.update(dict(
+            epoch_idx=0,
+            file_idx=fi,
+            row_offset_in_file=offset,
+            part_idx=next_part,
+            docs_in_part=0,
+            total_docs=done_docs,
+        ))
+        inferred_iterator = it
+    else:
+        inferred_iterator = None
+
 
     # 信号 / 异常时保存 checkpoint
     def on_interrupt():
@@ -275,22 +417,25 @@ def main():
             # 逐文件读取；当前文件可能需要先 skip 已处理行
             for fi in range(state["file_idx"], len(files)):
                 filepath = files[fi]
-                stream = load_dataset("parquet", data_files=[filepath], split="train", streaming=True)
+                if 'inferred_iterator' in locals() and inferred_iterator is not None and fi == state["file_idx"]:
+                    stream = inferred_iterator
+                    inferred_iterator = None
+                else:
+                    stream = load_dataset("parquet", data_files=[filepath], split="train", streaming=True)
 
-                # 如果需要跳过文件内的若干行（断点恢复）
+                # 如果需要跳过文件内的若干行（老的 JSON 恢复路径）
                 skipped = 0
-                if state["row_offset_in_file"] > 0:
+                if state["row_offset_in_file"] > 0 and stream is not None and not hasattr(stream, '__next__'):
                     for _ in stream:
                         skipped += 1
                         if skipped >= state["row_offset_in_file"]:
                             break
-                    # 重新构造迭代器，从下一行开始
                     stream = load_dataset("parquet", data_files=[filepath], split="train", streaming=True)
-                    # 再次跳过 offset 行（这次是“丢弃”迭代）
                     it = iter(stream)
                     for _ in range(state["row_offset_in_file"]):
                         next(it, None)
                     stream = it
+
 
                 row_idx_in_file = state["row_offset_in_file"]
                 for row in stream:

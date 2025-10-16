@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# python compute_magic_primes.py /root/fineweb-edu-binidx --ctx_len 4096
+# python compute_magic_prime.py /root/fineweb-edu-binidx --ctx_len 4096
 # # 只看 fineweb-edu.part*.bin 这类前缀
-# python compute_magic_primes.py /root/fineweb-edu-binidx --ctx_len 4096 --pattern "fineweb-edu.part*.bin"
-# python compute_magic_primes.py /root/fineweb-edu-binidx --ctx_len 4096 --summary_only
+# python compute_magic_prime.py /root/fineweb-edu-binidx --ctx_len 4096 --pattern "fineweb-edu.part*.bin"
+# python compute_magic_prime.py /root/fineweb-edu-binidx --ctx_len 4096 --summary_only
 
 
 import os, sys, argparse, glob
