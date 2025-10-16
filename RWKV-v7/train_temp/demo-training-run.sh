@@ -33,9 +33,10 @@ rm "$PROJ_DIR"/rwkv-final.pth
 # Finetuning => use very small LR, such as 1e-5
 #
 M_BSZ="8" # takes ~9G VRAM here => reduce this to save VRAM, increase this for faster speed
-LR_INIT="5e-5"
+LR_INIT="2e-4"
 # Initial learning rate. The formula is 0.45 / N_EMBD, rounded appropriately. For example, for an L12-D768 0.1B model, the initial learning rate is 0.45/768=0.0005859375, which is rounded to 6e-4.Initial learning rate. The formula is 0.45 / N_EMBD, rounded appropriately. For example, for an L12-D768 0.1B model, the initial learning rate is 0.45/768=0.0005859375, which is rounded to 6e-4.
-LR_FINAL="3e-5"
+LR_FINAL="2e-5"
+WARMUP_STEPS=10
 # Final learning rate. The formula is 0.04 / N_EMBD, rounded appropriately.
 GRAD_CP=1 # 1 => slower, save VRAM; 0 => faster, more VRAM
 EPOCH_SAVE=1 # save every 10 "miniepochs" (1 miniepoch = 40320 * ctx_len tokens) => decrease if your GPU is weak
@@ -50,15 +51,17 @@ GPU_PER_NODE=8 # number of GPUs per node
 #
 DS_BUCKET_MB=200 # set to 2 for consumer GPUs, set to 200 for A100 / H100 (affects speed & vram usage)
 #
-MY_EXIT_TOKENS=12497361914
-MAGIC_PRIME=508229
+# MY_EXIT_TOKENS=12497361914
+# MAGIC_PRIME=508229
 
-python train.py --load_model "0" --wandb "Test" --proj_dir $PROJ_DIR --my_testing $MODEL_TYPE \
+# 新增辅助参数：
+# --shard_range 5-12：只训练 part005 到 part012；
+# --skip_missing 1：缺分片跳过（设为 0 则缺失时报错退出）。
+python train_multishared.py --load_model "0" --wandb "Test" --proj_dir $PROJ_DIR --my_testing $MODEL_TYPE \
  --ctx_len $CTX_LEN --train_stage 3 --epoch_count 999999 --epoch_begin 0 \
- --data_file "/data/malulab/datasets/fineweb-edu/binidx-samples/fineweb-edu.part005" \
- --my_exit_tokens $MY_EXIT_TOKENS --magic_prime $MAGIC_PRIME \
+ --data_dir /data/malulab/datasets/fineweb-edu/binidx-samples \
  --num_nodes $N_NODE --micro_bsz $M_BSZ --n_layer $N_LAYER --n_embd $N_EMBD \
- --lr_init $LR_INIT --lr_final $LR_FINAL --warmup_steps 10 --beta1 0.9 --beta2 0.99 --adam_eps 1e-18 \
+ --lr_init $LR_INIT --lr_final $LR_FINAL --warmup_steps $WARMUP_STEPS --beta1 0.9 --beta2 0.99 --adam_eps 1e-18 \
  --data_type "binidx" --vocab_size 65536 \
  --weight_decay 0.001 --epoch_save $EPOCH_SAVE --head_size 64 \
  --accelerator gpu --devices $GPU_PER_NODE --precision bf16 --strategy deepspeed_stage_2 --grad_cp $GRAD_CP --enable_progress_bar True --ds_bucket_mb $DS_BUCKET_MB
